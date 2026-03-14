@@ -55,7 +55,11 @@ app.include_router(tareas_router)
 @app.get("/health", tags=["Health"])
 async def health():
     """Verifica el estado de todos los servicios."""
-    estado = {"db": "error", "claude": "error", "voyage": "error"}
+    from app.ai.llm_client import get_provider_info
+    provider_info = get_provider_info()
+    provider = provider_info["provider"]
+
+    estado = {"db": "error", "llm": "error", "voyage": "error", "llm_provider": provider}
 
     # DB
     try:
@@ -65,12 +69,17 @@ async def health():
     except Exception as e:
         logger.error(f"DB health check failed: {e}")
 
-    # Claude
+    # LLM provider
     try:
-        if settings.anthropic_api_key and settings.anthropic_api_key.startswith("sk-ant"):
-            estado["claude"] = "ok"
+        if provider == "anthropic":
+            key_ok = bool(settings.anthropic_api_key)
+        elif provider == "openrouter":
+            key_ok = bool(settings.openrouter_api_key)
+        elif provider == "groq":
+            key_ok = bool(settings.groq_api_key)
         else:
-            estado["claude"] = "no_key"
+            key_ok = False
+        estado["llm"] = "ok" if key_ok else "no_key"
     except Exception:
         pass
 
@@ -84,6 +93,13 @@ async def health():
         pass
 
     return estado
+
+
+@app.get("/ai/provider", tags=["AI"])
+async def ai_provider():
+    """Devuelve el proveedor LLM activo y los modelos por defecto disponibles."""
+    from app.ai.llm_client import get_provider_info
+    return get_provider_info()
 
 
 @app.get("/", tags=["Root"])

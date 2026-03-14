@@ -1,11 +1,9 @@
-"""Síntesis de informes con Claude."""
+"""Síntesis de informes con el proveedor LLM configurado."""
 import json
-import anthropic
-from app.config import get_settings
+from app.ai import llm_client
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-settings = get_settings()
 
 SYSTEM_INFORME = """
 Eres un experto en derecho inmobiliario y urbanismo español especializado en
@@ -81,14 +79,8 @@ Responde ÚNICAMENTE con JSON válido:
 """
 
 
-def _get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-
 async def sintetizar_informe(datos_catastro: dict, chunks_pgou: list[dict], normativa: list[dict]) -> dict:
     """Genera informe completo combinando todas las fuentes."""
-    client = _get_client()
-
     contexto = f"""
 DATOS CATASTRO:
 {json.dumps(datos_catastro, ensure_ascii=False, indent=2)}
@@ -99,22 +91,12 @@ FRAGMENTOS PGOU:
 NORMATIVA BOC/BOPA/BOE:
 {json.dumps(normativa, ensure_ascii=False, indent=2)}
 """
-
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
-        system=SYSTEM_INFORME,
-        messages=[{"role": "user", "content": contexto}],
-    )
-
-    texto = message.content[0].text
+    texto = llm_client.complete(SYSTEM_INFORME, contexto, max_tokens=2000)
     return json.loads(texto)
 
 
 async def consultar_pgou(chunks: list[dict], pregunta: str, municipio: str) -> dict:
     """Responde una pregunta sobre el PGOU usando los chunks recuperados."""
-    client = _get_client()
-
     contexto = f"""
 MUNICIPIO: {municipio}
 PREGUNTA: {pregunta}
@@ -122,23 +104,13 @@ PREGUNTA: {pregunta}
 FRAGMENTOS PGOU RELEVANTES:
 {json.dumps(chunks, ensure_ascii=False, indent=2)}
 """
-
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1000,
-        system=SYSTEM_PGOU,
-        messages=[{"role": "user", "content": contexto}],
-    )
-
-    texto = message.content[0].text
+    texto = llm_client.complete(SYSTEM_PGOU, contexto, max_tokens=1000)
     return json.loads(texto)
 
 
 async def analizar_documento(contenido_base64: str, media_type: str, consulta: str | None = None) -> dict:
-    """Analiza un documento con Claude vision."""
-    client = _get_client()
-
-    mensaje_usuario = [
+    """Analiza un documento con visión. Usa bloques de contenido multimodal."""
+    bloques = [
         {
             "type": "image",
             "source": {
@@ -149,14 +121,7 @@ async def analizar_documento(contenido_base64: str, media_type: str, consulta: s
         }
     ]
     if consulta:
-        mensaje_usuario.append({"type": "text", "text": f"Consulta específica: {consulta}"})
+        bloques.append({"type": "text", "text": f"Consulta específica: {consulta}"})
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
-        system=SYSTEM_DOCUMENTOS,
-        messages=[{"role": "user", "content": mensaje_usuario}],
-    )
-
-    texto = message.content[0].text
+    texto = llm_client.complete(SYSTEM_DOCUMENTOS, bloques, max_tokens=2000)
     return json.loads(texto)
