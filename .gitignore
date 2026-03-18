@@ -10,3 +10,4 @@ dist/
 .venv/
 backend/storage/docs/**/*.pdf
 !backend/storage/docs/.gitkeep
+CLAUDE.md

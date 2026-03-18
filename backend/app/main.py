@@ -21,10 +21,13 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 PropIA v3.0 arrancando...")
-    # Las migraciones se aplican con Alembic, no aquí
+    logger.info("PropIA v3.0 arrancando...")
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Tablas verificadas/creadas.")
     yield
-    logger.info("👋 PropIA v3.0 cerrando...")
+    logger.info("PropIA v3.0 cerrando...")
     await engine.dispose()
 
 

@@ -188,6 +188,11 @@ export function BibliotecaPanel() {
                     Marcar todos
                   </button>
                   <button
+                    onClick={() => setSeleccionados(new Set())}
+                    className="text-xs px-3 py-1 rounded-lg border hover:bg-gray-100">
+                    Desmarcar todos
+                  </button>
+                  <button
                     onClick={() => setShowConfirm(true)}
                     disabled={seleccionados.size === 0}
                     className="flex items-center gap-1 text-xs px-3 py-1 rounded-lg bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50">

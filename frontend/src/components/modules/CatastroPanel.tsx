@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Copy, Check } from 'lucide-react'
 import { catastroApi } from '../../api/client'
 import { useAppStore } from '../../stores/appStore'
 
@@ -8,13 +8,70 @@ const PROVINCIAS = [
   { value: 'ASTURIAS', label: 'Asturias' },
 ]
 
+interface DatosCatastro {
+  referencia_catastral: string | null
+  clase: string | null
+  direccion: string | null
+  municipio: string | null
+  provincia: string | null
+  codigo_postal: string | null
+  uso: string | null
+  superficie_construida_m2: number | null
+  superficie_parcela_m2: number | null
+  ano_construccion: number | null
+  valor_catastral: number | null
+  coeficiente_participacion: string | null
+}
+
+function Campo({ label, value }: { label: string; value: React.ReactNode }) {
+  if (!value) return null
+  return (
+    <div className="grid grid-cols-[180px_1fr] gap-4 py-3 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-gray-500 text-right self-start pt-0.5">{label}</span>
+      <span className="text-sm font-medium text-gray-900">{value}</span>
+    </div>
+  )
+}
+
+function RCCopyable({ rc }: { rc: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    navigator.clipboard.writeText(rc)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <span className="inline-flex items-center gap-2 font-mono">
+      {rc}
+      <button
+        onClick={handleCopy}
+        className="text-gray-400 hover:text-gray-700 transition-colors"
+        title="Copiar RC"
+      >
+        {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+      </button>
+    </span>
+  )
+}
+
+function SeccionCatastro({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl overflow-hidden border border-gray-200">
+      <div className="bg-amber-500 px-5 py-2.5">
+        <h3 className="text-sm font-bold text-white tracking-wide uppercase">{titulo}</h3>
+      </div>
+      <div className="bg-white px-5 py-1">{children}</div>
+    </div>
+  )
+}
+
 export function CatastroPanel() {
   const { setLoading, setCurrentResult } = useAppStore()
   const [rc, setRc] = useState('')
   const [provincia, setProvincia] = useState('CANTABRIA')
   const [municipio, setMunicipio] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [resultado, setResultado] = useState<any>(null)
+  const [resultado, setResultado] = useState<DatosCatastro | null>(null)
 
   const handleConsulta = async () => {
     if (!rc || !municipio) {
@@ -25,7 +82,7 @@ export function CatastroPanel() {
     setLoading(true, 'Consultando Catastro OVC...')
     try {
       const data = await catastroApi.dnprc({ provincia, municipio: municipio.toUpperCase(), rc })
-      setResultado(data)
+      setResultado(data as DatosCatastro)
       setCurrentResult(data)
     } catch (e: any) {
       setError(e.message)
@@ -97,11 +154,37 @@ export function CatastroPanel() {
       </div>
 
       {resultado && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="font-medium text-gray-900 mb-3">Resultado</h3>
-          <pre className="text-xs bg-gray-50 rounded-lg p-4 overflow-auto max-h-96">
-            {JSON.stringify(resultado, null, 2)}
-          </pre>
+        <div className="space-y-4">
+          <SeccionCatastro titulo="Datos descriptivos del inmueble">
+            {resultado.referencia_catastral && (
+              <Campo label="Referencia catastral" value={<RCCopyable rc={resultado.referencia_catastral} />} />
+            )}
+            <Campo label="Localización" value={resultado.direccion} />
+            <Campo label="Clase" value={resultado.clase} />
+            <Campo label="Uso principal" value={resultado.uso} />
+            {resultado.ano_construccion && (
+              <Campo label="Año de construcción" value={resultado.ano_construccion} />
+            )}
+            {resultado.coeficiente_participacion && (
+              <Campo label="Coef. participación" value={`${resultado.coeficiente_participacion} %`} />
+            )}
+          </SeccionCatastro>
+
+          {(resultado.superficie_parcela_m2 || resultado.superficie_construida_m2) && (
+            <SeccionCatastro titulo="Parcela catastral">
+              <Campo label="Localización" value={
+                resultado.municipio
+                  ? `${resultado.municipio}${resultado.provincia ? ` (${resultado.provincia})` : ''}`
+                  : null
+              } />
+              {resultado.superficie_parcela_m2 && (
+                <Campo label="Superficie gráfica" value={`${resultado.superficie_parcela_m2} m²`} />
+              )}
+              {resultado.superficie_construida_m2 && (
+                <Campo label="Superficie construida" value={`${resultado.superficie_construida_m2} m²`} />
+              )}
+            </SeccionCatastro>
+          )}
         </div>
       )}
     </div>

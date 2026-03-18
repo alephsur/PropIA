@@ -39,8 +39,20 @@ async def scrape_documentos_url(
     """
     Hace scraping de una URL de ayuntamiento y devuelve todos los PDFs encontrados.
     """
-    async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
+    logger.info(f"Scraping {url} para {municipio}, {provincia}")
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
+    }
+    async with httpx.AsyncClient(follow_redirects=True, timeout=20, headers=headers) as client:
+        logger.info(f"Obteniendo {url}")
         resp = await client.get(url)
+        logger.info(f"Respuesta: {resp.status_code}")
         resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "lxml")
