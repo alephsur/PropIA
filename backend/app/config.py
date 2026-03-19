@@ -5,7 +5,11 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # IA — Anthropic
     anthropic_api_key: str = ""
-    voyage_api_key: str = ""
+
+    # Embeddings — Ollama local
+    ollama_base_url: str = "http://ollama:11434"
+    embedding_model: str = "mxbai-embed-large"
+    embedding_dimensions: int = 1024
 
     # IA — OpenRouter
     openrouter_api_key: str = ""

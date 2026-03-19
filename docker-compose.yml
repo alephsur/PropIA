@@ -24,9 +24,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     volumes:
       - ./backend:/app
       - pdf_storage:/app/storage
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c", "ollama serve & until ollama list 2>/dev/null; do sleep 1; done && ollama pull mxbai-embed-large && wait"]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
 
   frontend:
     build: ./frontend
@@ -42,3 +58,4 @@ services:
 volumes:
   pgdata:
   pdf_storage:
+  ollama_data:
