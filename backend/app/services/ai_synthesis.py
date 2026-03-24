@@ -108,8 +108,17 @@ FRAGMENTOS PGOU RELEVANTES:
     return json.loads(texto)
 
 
+async def analizar_documento_texto(texto_pdf: str, consulta: str | None = None) -> dict:
+    """Analiza texto extraído de un PDF. Compatible con todos los proveedores LLM."""
+    contenido = texto_pdf
+    if consulta:
+        contenido += f"\n\nConsulta específica: {consulta}"
+    texto = llm_client.complete(SYSTEM_DOCUMENTOS, contenido, max_tokens=2000)
+    return json.loads(texto)
+
+
 async def analizar_documento(contenido_base64: str, media_type: str, consulta: str | None = None) -> dict:
-    """Analiza un documento con visión. Usa bloques de contenido multimodal."""
+    """Analiza una imagen con visión multimodal. Requiere modelo con capacidad de visión."""
     bloques = [
         {
             "type": "image",

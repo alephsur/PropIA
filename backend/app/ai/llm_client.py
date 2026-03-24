@@ -1,8 +1,8 @@
 """
 Abstracción de clientes LLM.
 Soporta Anthropic, OpenRouter y Groq con una interfaz unificada.
+Incluye fallback automático entre proveedores al alcanzar límites de uso.
 """
-import json
 import anthropic
 import openai
 from app.config import get_settings
@@ -21,10 +21,10 @@ DEFAULT_MODELS = {
 _OPENAI_COMPAT_PROVIDERS = {"openrouter", "groq"}
 
 
-def _get_model(provider: str, settings) -> str:
+def _get_model(provider: str, model_override: str = "") -> str:
     """Devuelve el modelo configurado o el modelo por defecto del proveedor."""
-    if settings.ai_model:
-        return settings.ai_model
+    if model_override:
+        return model_override
     return DEFAULT_MODELS.get(provider, DEFAULT_MODELS["anthropic"])
 
 
@@ -46,9 +46,25 @@ def _get_openai_compat_client(provider: str, settings) -> openai.OpenAI:
     raise ValueError(f"Proveedor desconocido: {provider}")
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Detecta si el error es un rate limit (HTTP 429) o quota agotada."""
+    if isinstance(exc, openai.RateLimitError):
+        return True
+    if isinstance(exc, anthropic.RateLimitError):
+        return True
+    # Algunos proveedores devuelven 429 como APIStatusError genérico
+    if isinstance(exc, openai.APIStatusError) and exc.status_code == 429:
+        return True
+    if isinstance(exc, anthropic.APIStatusError) and exc.status_code == 429:
+        return True
+    return False
+
+
 def complete(system: str, user_content, max_tokens: int = 2000) -> str:
     """
     Llama al LLM configurado y devuelve el texto de respuesta.
+    Si el proveedor principal alcanza el límite de uso y hay un fallback configurado,
+    reintenta automáticamente con el proveedor alternativo.
 
     Args:
         system: Prompt de sistema.
@@ -60,10 +76,36 @@ def complete(system: str, user_content, max_tokens: int = 2000) -> str:
     """
     settings = get_settings()
     provider = settings.ai_provider
-    model = _get_model(provider, settings)
+    model = _get_model(provider, settings.ai_model)
 
     logger.debug(f"LLM call → proveedor={provider}, modelo={model}")
 
+    try:
+        return _call_provider(provider, model, system, user_content, max_tokens, settings)
+    except Exception as exc:
+        if not _is_rate_limit_error(exc):
+            raise
+
+        fallback_provider = settings.ai_provider_fallback
+        if not fallback_provider:
+            logger.warning(f"Rate limit en {provider}. No hay proveedor fallback configurado.")
+            raise
+
+        if fallback_provider == provider:
+            logger.warning(f"Rate limit en {provider}. El fallback es el mismo proveedor, ignorando.")
+            raise
+
+        fallback_model = _get_model(fallback_provider, settings.ai_model_fallback)
+        logger.warning(
+            f"Rate limit en {provider} ({type(exc).__name__}). "
+            f"Reintentando con fallback: {fallback_provider} / {fallback_model}"
+        )
+
+        return _call_provider(fallback_provider, fallback_model, system, user_content, max_tokens, settings)
+
+
+def _call_provider(provider: str, model: str, system: str, user_content, max_tokens: int, settings) -> str:
+    """Despacha la llamada al proveedor indicado."""
     if provider == "anthropic":
         return _complete_anthropic(system, user_content, max_tokens, model, settings)
 
@@ -76,7 +118,6 @@ def complete(system: str, user_content, max_tokens: int = 2000) -> str:
 def _complete_anthropic(system, user_content, max_tokens, model, settings) -> str:
     client = _get_anthropic_client(settings)
 
-    # user_content puede ser str o lista de bloques (visión)
     if isinstance(user_content, str):
         messages = [{"role": "user", "content": user_content}]
     else:
@@ -94,7 +135,6 @@ def _complete_anthropic(system, user_content, max_tokens, model, settings) -> st
 def _complete_openai_compat(provider, system, user_content, max_tokens, model, settings) -> str:
     client = _get_openai_compat_client(provider, settings)
 
-    # Convertir bloques de contenido Anthropic al formato OpenAI si es necesario
     if isinstance(user_content, str):
         content = user_content
     elif isinstance(user_content, list):
@@ -142,10 +182,14 @@ def get_provider_info() -> dict:
     """Devuelve info del proveedor y modelo activos (sin exponer claves)."""
     settings = get_settings()
     provider = settings.ai_provider
-    model = _get_model(provider, settings)
+    model = _get_model(provider, settings.ai_model)
+    fallback_provider = settings.ai_provider_fallback or None
+    fallback_model = _get_model(fallback_provider, settings.ai_model_fallback) if fallback_provider else None
     return {
         "provider": provider,
         "model": model,
+        "fallback_provider": fallback_provider,
+        "fallback_model": fallback_model,
         "available_providers": list(DEFAULT_MODELS.keys()),
         "default_models": DEFAULT_MODELS,
     }

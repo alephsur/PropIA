@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     ai_provider: str = "anthropic"
     # Modelo a usar (si vacío, se usa el modelo por defecto del proveedor)
     ai_model: str = ""
+    # Proveedor de fallback cuando el principal alcanza el límite de uso (vacío = sin fallback)
+    ai_provider_fallback: str = ""
+    # Modelo para el proveedor fallback (vacío = modelo por defecto del proveedor fallback)
+    ai_model_fallback: str = ""
 
     # Base de datos
     database_url: str = "postgresql+asyncpg://propia:propia@db:5432/propia"
