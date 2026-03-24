@@ -78,85 +78,95 @@ async def descargar_e_indexar(
     from app.ai.pgou_index import indexar_pdf
 
     async with AsyncSessionLocal() as db:
-        await _update_tarea(db, tarea_id, "running", "Iniciando descarga...",
-                            {"total": len(documentos), "procesados": 0})
+        try:
+            await _update_tarea(db, tarea_id, "running", "Iniciando descarga...",
+                                {"total": len(documentos), "procesados": 0})
 
-        ccaa = get_ccaa(provincia)
-        procesados = 0
+            ccaa = get_ccaa(provincia)
+            procesados = 0
 
-        for i, doc in enumerate(documentos):
-            await _update_tarea(
-                db, tarea_id, "running",
-                f"Descargando {doc.nombre} ({i + 1}/{len(documentos)})",
-                {"total": len(documentos), "procesados": i},
-            )
-
-            try:
-                # Check if already downloaded
-                existing = await db.execute(
-                    select(DocumentoBiblioteca).where(
-                        DocumentoBiblioteca.municipio == municipio,
-                        DocumentoBiblioteca.provincia == provincia,
-                        DocumentoBiblioteca.nombre == doc.nombre,
-                    )
-                )
-                if existing.scalar_one_or_none():
-                    logger.info(f"Documento ya existe, omitiendo: {doc.nombre}")
-                    procesados += 1
-                    continue
-
-                # Download PDF
-                async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                    r = await client.get(doc.url_origen)
-                    r.raise_for_status()
-                    content = r.content
-
-                # Save to storage
-                ruta = await save_pdf(content, provincia, municipio, doc.nombre)
-
-                # Register in DB
-                doc_bd = DocumentoBiblioteca(
-                    municipio=municipio,
-                    provincia=provincia,
-                    ccaa=ccaa,
-                    nombre=doc.nombre,
-                    seccion=doc.seccion,
-                    ruta_local=str(ruta),
-                    url_origen=doc.url_origen,
-                    tamanio_bytes=len(content),
-                    indexado=False,
-                )
-                db.add(doc_bd)
-                await db.commit()
-                await db.refresh(doc_bd)
-
-                # Index if semantically valuable
-                if doc.seccion not in SECCIONES_NO_INDEXAR:
-                    await _update_tarea(
-                        db, tarea_id, "running",
-                        f"Indexando {doc.nombre}...",
-                        {"total": len(documentos), "procesados": i},
-                    )
-                    await indexar_pdf(db, doc_bd.id, content, municipio, provincia, doc.seccion)
-                    doc_bd.indexado = True
-                    await db.commit()
-
-                procesados += 1
-
-            except Exception as e:
-                logger.error(f"Error procesando {doc.nombre}: {e}")
+            for i, doc in enumerate(documentos):
                 await _update_tarea(
                     db, tarea_id, "running",
-                    f"Error en {doc.nombre}: {str(e)[:100]}",
-                    {"total": len(documentos), "procesados": i, "ultimo_error": str(e)},
+                    f"Descargando {doc.nombre} ({i + 1}/{len(documentos)})",
+                    {"total": len(documentos), "procesados": i},
                 )
-                continue
 
-        await _update_tarea(
-            db, tarea_id, "done",
-            f"Completado: {procesados}/{len(documentos)} documentos procesados",
-            {"total": len(documentos), "procesados": procesados},
-        )
+                try:
+                    # Check if already downloaded
+                    existing = await db.execute(
+                        select(DocumentoBiblioteca).where(
+                            DocumentoBiblioteca.municipio == municipio,
+                            DocumentoBiblioteca.provincia == provincia,
+                            DocumentoBiblioteca.nombre == doc.nombre,
+                        )
+                    )
+                    if existing.scalar_one_or_none():
+                        logger.info(f"Documento ya existe, omitiendo: {doc.nombre}")
+                        procesados += 1
+                        continue
+
+                    # Download PDF
+                    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                        r = await client.get(doc.url_origen)
+                        r.raise_for_status()
+                        content = r.content
+
+                    # Save to storage
+                    ruta = await save_pdf(content, provincia, municipio, doc.nombre)
+
+                    # Register in DB
+                    doc_bd = DocumentoBiblioteca(
+                        municipio=municipio,
+                        provincia=provincia,
+                        ccaa=ccaa,
+                        nombre=doc.nombre,
+                        seccion=doc.seccion,
+                        ruta_local=str(ruta),
+                        url_origen=doc.url_origen,
+                        tamanio_bytes=len(content),
+                        indexado=False,
+                    )
+                    db.add(doc_bd)
+                    await db.commit()
+                    await db.refresh(doc_bd)
+
+                    # Index if semantically valuable
+                    if doc.seccion not in SECCIONES_NO_INDEXAR:
+                        await _update_tarea(
+                            db, tarea_id, "running",
+                            f"Indexando {doc.nombre}...",
+                            {"total": len(documentos), "procesados": i},
+                        )
+                        await indexar_pdf(db, doc_bd.id, content, municipio, provincia, doc.seccion)
+                        doc_bd.indexado = True
+                        await db.commit()
+
+                    procesados += 1
+
+                except Exception as e:
+                    logger.error(f"Error procesando {doc.nombre}: {e}")
+                    await db.rollback()
+                    await _update_tarea(
+                        db, tarea_id, "running",
+                        f"Error en {doc.nombre}: {str(e)[:100]}",
+                        {"total": len(documentos), "procesados": i, "ultimo_error": str(e)},
+                    )
+                    continue
+
+            await _update_tarea(
+                db, tarea_id, "done",
+                f"Completado: {procesados}/{len(documentos)} documentos procesados",
+                {"total": len(documentos), "procesados": procesados},
+            )
+
+        except Exception as e:
+            logger.error(f"Error fatal en tarea background {tarea_id}: {e}")
+            try:
+                await db.rollback()
+                await _update_tarea(db, tarea_id, "error", f"Error fatal: {str(e)[:200]}")
+            except Exception:
+                pass
 
 
 async def listar_documentos_municipio(

@@ -10,8 +10,10 @@ import uuid
 
 logger = get_logger(__name__)
 
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
+# mxbai-embed-large tiene contexto de 512 tokens.
+# Texto legal en español ~ 1,5-2 tokens/carácter → límite seguro ~400 chars.
+CHUNK_SIZE = 400
+CHUNK_OVERLAP = 80
 
 
 def _chunk_texto(texto: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
@@ -102,7 +104,7 @@ async def indexar_pdf(
         await db.flush()
         # Actualizar embedding con pgvector
         await db.execute(
-            text("UPDATE pgou_chunks SET embedding = :emb WHERE id = :id"),
+            text("UPDATE pgou_chunks SET embedding = CAST(:emb AS vector) WHERE id = :id"),
             {"emb": str(embedding), "id": str(chunk.id)}
         )
 
@@ -160,10 +162,10 @@ async def buscar_pgou(
     rows = await db.execute(
         text("""
             SELECT id, contenido, seccion, articulo, metadatos,
-                   1 - (embedding <=> :emb::vector) as similitud
+                   1 - (embedding <=> CAST(:emb AS vector)) as similitud
             FROM pgou_chunks
             WHERE municipio = :municipio AND provincia = :provincia
-            ORDER BY embedding <=> :emb::vector
+            ORDER BY embedding <=> CAST(:emb AS vector)
             LIMIT :k
         """),
         {"emb": str(embedding), "municipio": municipio, "provincia": provincia, "k": top_k}
