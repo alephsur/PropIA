@@ -1,8 +1,10 @@
 """PropIA v3.0 - Sistema de Automatización Inmobiliaria."""
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.config import get_settings
 from app.db.session import engine
@@ -19,13 +21,26 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+async def _init_db(retries: int = 10, delay: float = 3.0) -> None:
+    """Inicializa la BD con reintentos para tolerar arranques lentos del contenedor db."""
+    for attempt in range(1, retries + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Tablas verificadas/creadas.")
+            return
+        except (OperationalError, OSError, Exception) as e:
+            if attempt == retries:
+                raise
+            logger.warning(f"DB no disponible (intento {attempt}/{retries}): {e} — reintentando en {delay}s...")
+            await asyncio.sleep(delay)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("PropIA v3.0 arrancando...")
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Tablas verificadas/creadas.")
+    await _init_db()
     yield
     logger.info("PropIA v3.0 cerrando...")
     await engine.dispose()

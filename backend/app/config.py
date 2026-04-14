@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://ollama:11434"
     embedding_model: str = "mxbai-embed-large"
     embedding_dimensions: int = 1024
+    # Modelo Ollama para inferencia LLM (distinto del modelo de embeddings)
+    ollama_llm_model: str = "llama3.2"
 
     # IA — OpenRouter
     openrouter_api_key: str = ""
@@ -19,7 +21,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
-    # Proveedor activo: "anthropic" | "openrouter" | "groq"
+    # Proveedor activo: "anthropic" | "openrouter" | "groq" | "ollama"
     ai_provider: str = "anthropic"
     # Modelo a usar (si vacío, se usa el modelo por defecto del proveedor)
     ai_model: str = ""
@@ -27,6 +29,10 @@ class Settings(BaseSettings):
     ai_provider_fallback: str = ""
     # Modelo para el proveedor fallback (vacío = modelo por defecto del proveedor fallback)
     ai_model_fallback: str = ""
+    # Proveedor exclusivo para el módulo de documentos (vacío = usar ai_provider)
+    # Recomendado: "ollama" para evitar límites de tokens en documentos grandes
+    ai_provider_documentos: str = ""
+    ai_model_documentos: str = ""
 
     # Base de datos
     database_url: str = "postgresql+asyncpg://propia:propia@db:5432/propia"

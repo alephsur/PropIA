@@ -12,6 +12,55 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 router = APIRouter(prefix="/urbanismo", tags=["Urbanismo"])
 
+# Consultas predefinidas agrupadas por categoría.
+# Diseñadas con vocabulario técnico del PGOU para maximizar la recuperación RAG.
+CONSULTAS_TIPO = [
+    {
+        "categoria": "Clasificación y usos del suelo",
+        "consultas": [
+            {"titulo": "Clasificación del suelo", "consulta": "clasificación suelo urbano urbanizable no urbanizable"},
+            {"titulo": "Usos permitidos zona residencial", "consulta": "usos permitidos zona residencial vivienda unifamiliar"},
+            {"titulo": "Usos prohibidos", "consulta": "usos prohibidos incompatibles"},
+            {"titulo": "Uso global y pormenorizado", "consulta": "uso global pormenorizado residencial comercial industrial"},
+        ],
+    },
+    {
+        "categoria": "Edificabilidad y parámetros",
+        "consultas": [
+            {"titulo": "Edificabilidad máxima", "consulta": "índice edificabilidad máxima m2 techo m2 suelo coeficiente"},
+            {"titulo": "Altura máxima", "consulta": "altura máxima plantas metros cornisa cumbrera"},
+            {"titulo": "Ocupación máxima", "consulta": "ocupación máxima parcela porcentaje"},
+            {"titulo": "Retranqueos y separaciones", "consulta": "retranqueos separación linderos frente fondo"},
+            {"titulo": "Parcela mínima", "consulta": "parcela mínima superficie frente mínimo"},
+        ],
+    },
+    {
+        "categoria": "Coeficientes y valores",
+        "consultas": [
+            {"titulo": "Coeficientes de ponderación", "consulta": "coeficiente ponderación usos vivienda residencial tabla valores"},
+            {"titulo": "Aprovechamiento tipo", "consulta": "aprovechamiento tipo medio área reparto unidades"},
+            {"titulo": "Cesiones obligatorias", "consulta": "cesiones obligatorias dotaciones zonas verdes equipamiento"},
+        ],
+    },
+    {
+        "categoria": "Condiciones generales",
+        "consultas": [
+            {"titulo": "Condiciones estéticas", "consulta": "condiciones estéticas fachada materiales cubierta color"},
+            {"titulo": "Aparcamientos", "consulta": "dotación aparcamiento plazas garaje vivienda"},
+            {"titulo": "Protección patrimonial", "consulta": "protección patrimonio catalogado BIC grado intervención"},
+            {"titulo": "Zonas verdes y espacios libres", "consulta": "zonas verdes espacios libres dotaciones locales"},
+        ],
+    },
+    {
+        "categoria": "Procedimientos",
+        "consultas": [
+            {"titulo": "Licencia de obra", "consulta": "licencia obra mayor menor comunicación previa requisitos"},
+            {"titulo": "Segregación y parcelación", "consulta": "segregación parcelación división parcela condiciones"},
+            {"titulo": "Régimen de fuera de ordenación", "consulta": "fuera ordenación régimen transitorio volumen disconforme"},
+        ],
+    },
+]
+
 
 class ConsultaUrbanismo(BaseModel):
     provincia: str
@@ -32,6 +81,12 @@ async def informe_urbanismo(body: ConsultaUrbanismo, db: AsyncSession = Depends(
     except Exception as e:
         logger.error(f"Error informe urbanismo: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/consultas-tipo")
+async def consultas_tipo():
+    """Devuelve consultas predefinidas agrupadas por categoría."""
+    return CONSULTAS_TIPO
 
 
 @router.get("/municipios")

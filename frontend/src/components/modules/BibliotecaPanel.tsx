@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Library, Search, Download, Eye, Trash2, CheckSquare, Square } from 'lucide-react'
+import { Library, Search, Download, Eye, Trash2, CheckSquare, Square, Map } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { bibliotecaApi } from '../../api/client'
 import { PdfViewer } from '../shared/PdfViewer'
 import { ConfirmDialog } from '../shared/ConfirmDialog'
 import { ProgressTracker } from '../shared/ProgressTracker'
+import { useAppStore } from '../../stores/appStore'
 
 const SECCIONES_NO_INDEXAR = ['Planos', 'Boletín']
 const SECCION_COLORS: Record<string, string> = {
@@ -250,47 +251,59 @@ export function BibliotecaPanel() {
           </div>
 
           {docsBiblioteca && docsBiblioteca.length > 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="text-left px-4 py-3 font-medium text-gray-700">Nombre</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-700">Sección</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-700">Indexado</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-700">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {docsBiblioteca.map((doc: any) => (
-                    <tr key={doc.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900 max-w-xs truncate">{doc.nombre}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SECCION_COLORS[doc.seccion] || SECCION_COLORS.Otros}`}>
-                          {doc.seccion}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {doc.indexado
-                          ? <span className="flex items-center gap-1 text-green-700 text-xs">✓ Indexado</span>
-                          : <span className="text-gray-400 text-xs">No indexado</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <button onClick={() => setViewerDoc({ id: doc.id, nombre: doc.nombre })}
-                            className="p-1 text-gray-500 hover:text-sky-600 rounded">
-                            <Eye size={16} />
-                          </button>
-                          <button onClick={() => handleEliminar(doc.id)}
-                            className="p-1 text-gray-500 hover:text-red-600 rounded">
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
+            <>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-700">Nombre</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-700">Seccion</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-700">Indexado</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-700">Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {docsBiblioteca.map((doc: any) => (
+                      <tr key={doc.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-900 max-w-xs truncate">{doc.nombre}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SECCION_COLORS[doc.seccion] || SECCION_COLORS.Otros}`}>
+                            {doc.seccion}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {doc.indexado
+                            ? <span className="flex items-center gap-1 text-green-700 text-xs">OK Indexado</span>
+                            : <span className="text-gray-400 text-xs">No indexado</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            <button onClick={() => setViewerDoc({ id: doc.id, nombre: doc.nombre })}
+                              className="p-1 text-gray-500 hover:text-sky-600 rounded">
+                              <Eye size={16} />
+                            </button>
+                            <button onClick={() => handleEliminar(doc.id)}
+                              className="p-1 text-gray-500 hover:text-red-600 rounded">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Boton para navegar a Urbanismo con el municipio pre-rellenado */}
+              {docsBiblioteca.some((d: any) => d.indexado) && (
+                <button
+                  onClick={() => useAppStore.getState().navegarAUrbanismo(municipioBiblio, provinciaBiblio)}
+                  className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium"
+                >
+                  <Map size={16} />
+                  Consultar PGOU de {municipioBiblio}
+                </button>
+              )}
+            </>
           ) : municipioBiblio ? (
             <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
               <Library size={40} className="mx-auto mb-3 opacity-40" />

@@ -39,6 +39,8 @@ export const urbanismoApi = {
     api.post('/urbanismo/informe', body),
   municipiosIndexados: (ccaa?: string) =>
     api.get('/urbanismo/municipios', { params: { ccaa } }),
+  consultasTipo: () =>
+    api.get('/urbanismo/consultas-tipo'),
 }
 
 export const normativaApi = {
@@ -58,5 +60,6 @@ export const documentosApi = {
   analizar: (formData: FormData) =>
     api.post('/documentos/analizar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000, // 5 min — modelos locales (Ollama) pueden tardar con documentos grandes
     }),
 }
