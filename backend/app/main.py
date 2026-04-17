@@ -8,7 +8,6 @@ from sqlalchemy.exc import OperationalError
 
 from app.config import get_settings
 from app.db.session import engine
-from app.db.models import Base
 from app.api.catastro import router as catastro_router
 from app.api.urbanismo import router as urbanismo_router
 from app.api.normativa import router as normativa_router
@@ -22,19 +21,36 @@ settings = get_settings()
 
 
 async def _init_db(retries: int = 10, delay: float = 3.0) -> None:
-    """Inicializa la BD con reintentos para tolerar arranques lentos del contenedor db."""
+    """Inicializa la BD con reintentos para tolerar arranques lentos del contenedor db.
+
+    Aplica las migraciones de Alembic en vez de `Base.metadata.create_all`, porque
+    hay objetos de schema (columna generada `pgou_chunks.tsv`, índices GIN) que sólo
+    se expresan en SQL puro dentro de las migraciones y no en los modelos.
+    """
+    from pathlib import Path
+    from alembic import command
+    from alembic.config import Config
+
     for attempt in range(1, retries + 1):
         try:
             async with engine.begin() as conn:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("Tablas verificadas/creadas.")
-            return
+            break
         except (OperationalError, OSError, Exception) as e:
             if attempt == retries:
                 raise
             logger.warning(f"DB no disponible (intento {attempt}/{retries}): {e} — reintentando en {delay}s...")
             await asyncio.sleep(delay)
+
+    # Aplicar migraciones alembic de forma idempotente en hilo bloqueante
+    def _run_upgrade() -> None:
+        alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+        cfg = Config(str(alembic_ini))
+        cfg.set_main_option("sqlalchemy.url", settings.database_url)
+        command.upgrade(cfg, "head")
+
+    await asyncio.to_thread(_run_upgrade)
+    logger.info("Migraciones Alembic aplicadas hasta head.")
 
 
 @asynccontextmanager

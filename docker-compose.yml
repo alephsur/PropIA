@@ -40,9 +40,9 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    entrypoint: ["/bin/sh", "-c", "ollama serve & until ollama list 2>/dev/null; do sleep 1; done && ollama pull mxbai-embed-large && ollama pull llama3.2 && wait"]
+    entrypoint: ["/bin/sh", "-c", "ollama serve & until ollama list 2>/dev/null; do sleep 1; done && ollama pull mxbai-embed-large && ollama pull qwen2.5:7b && wait"]
     healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large && ollama list | grep -q llama3.2"]
+      test: ["CMD-SHELL", "ollama list | grep -q mxbai-embed-large && ollama list | grep -q 'qwen2.5:7b'"]
       interval: 10s
       timeout: 5s
       retries: 30

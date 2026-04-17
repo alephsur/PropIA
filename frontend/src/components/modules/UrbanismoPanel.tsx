@@ -29,8 +29,9 @@ const CONFIANZA_STYLES = {
 }
 
 export function UrbanismoPanel() {
-  const { municipioUrbanismo, provinciaUrbanismo, setUrbanismoTarget } = useAppStore()
+  const { municipioUrbanismo, provinciaUrbanismo, rcUrbanismo, setUrbanismoTarget } = useAppStore()
   const [consulta, setConsulta] = useState('')
+  const [rc, setRc] = useState(rcUrbanismo)
   const [resultado, setResultado] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -53,6 +54,11 @@ export function UrbanismoPanel() {
     }
   }, [municipios, municipioUrbanismo, setUrbanismoTarget])
 
+  // Sincronizar RC cuando se navega desde Catastro
+  useEffect(() => {
+    if (rcUrbanismo) setRc(rcUrbanismo)
+  }, [rcUrbanismo])
+
   const handleConsulta = async (consultaTexto?: string) => {
     const texto = consultaTexto || consulta
     if (!municipioUrbanismo) { setError('Selecciona un municipio'); return }
@@ -63,6 +69,7 @@ export function UrbanismoPanel() {
         provincia: provinciaUrbanismo,
         municipio: municipioUrbanismo,
         consulta: texto,
+        ...(rc.trim() ? { rc: rc.trim().toUpperCase() } : {}),
       })
       setResultado(data)
       if (!consultaTexto) setConsulta('')
@@ -137,6 +144,21 @@ export function UrbanismoPanel() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* RC opcional */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Referencia Catastral
+            <span className="ml-2 text-xs font-normal text-gray-400">opcional — activa búsqueda de ficha de parcela</span>
+          </label>
+          <input
+            type="text"
+            value={rc}
+            onChange={(e) => setRc(e.target.value.toUpperCase())}
+            placeholder="Ej: 6646704UP8064N0001ST"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
         </div>
 
         {/* Consulta libre */}
@@ -232,24 +254,48 @@ function ResultadoPGOU({ resultado }: { resultado: any }) {
   const fragmentos = resultado.fragmentos_clave || []
   const articulos = resultado.articulos_referencia || []
   const nota = resultado.nota
+  const condicionesClave: string[] = (resultado.condiciones_clave || []).filter(Boolean)
 
-  // Campos urbanisticos (solo mostrar si tienen valor)
+  // Parámetros urbanísticos — campos de ambos prompts (SYSTEM_PGOU y SYSTEM_URBANISMO)
   const camposUrbanisticos = [
-    { label: 'Clasificacion suelo', value: resultado.clasificacion_suelo },
-    { label: 'Zonificacion', value: resultado.zonificacion },
-    { label: 'Uso global', value: resultado.uso_global },
-    { label: 'Edificabilidad', value: resultado.edificabilidad },
-    { label: 'Altura maxima', value: resultado.altura_maxima },
+    { label: 'Ámbito del plan', value: resultado.ambito_plan },
+    { label: 'Localización', value: resultado.localizacion },
+    { label: 'Clasificación suelo', value: resultado.clasificacion_suelo },
+    { label: 'Zonificación', value: resultado.zonificacion },
+    { label: 'Uso predominante', value: resultado.uso_predominante ?? resultado.uso_global },
+    { label: 'Tipología edificatoria', value: resultado.tipologia_edificatoria },
+    { label: 'Edificabilidad',
+      value: resultado.edificabilidad_m2c != null
+        ? `${resultado.edificabilidad_m2c} m²c`
+        : resultado.edificabilidad },
+    { label: 'Viviendas máx.', value: resultado.num_viviendas_max },
+    { label: 'Altura máxima', value: resultado.altura_maxima },
     { label: 'Retranqueos', value: resultado.retranqueos },
-    { label: 'Ocupacion maxima', value: resultado.ocupacion_maxima },
+    { label: 'Ocupación máxima', value: resultado.ocupacion_maxima },
     { label: 'Plan vigente', value: resultado.plan_vigente },
-  ].filter((c) => c.value && c.value !== 'null')
+  ].filter((c) => c.value != null && c.value !== 'null' && c.value !== '')
 
   const usosPermitidos = (resultado.usos_permitidos || []).filter(Boolean)
   const usosProhibidos = (resultado.usos_prohibidos || []).filter(Boolean)
 
   return (
     <div className="space-y-4">
+      {/* Ámbito del plan — badge prominente si viene de ficha estructurada */}
+      {resultado.ambito_plan && (
+        <div className="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+          <Map size={18} className="text-sky-600 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-sky-600 font-medium uppercase tracking-wide">Ámbito del plan</p>
+            <p className="text-sm font-semibold text-sky-900">
+              {resultado.ambito_plan}
+              {resultado.localizacion && (
+                <span className="font-normal text-sky-700"> — {resultado.localizacion}</span>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Confianza + Respuesta directa */}
       <div className={`rounded-xl border p-5 ${estilo.bg}`}>
         <div className="flex items-center gap-2 mb-3">
@@ -260,6 +306,26 @@ function ResultadoPGOU({ resultado }: { resultado: any }) {
           {resultado.respuesta_directa || 'Sin respuesta directa del modelo.'}
         </p>
       </div>
+
+      {/* Condiciones clave del propietario */}
+      {condicionesClave.length > 0 && (
+        <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+          <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+            <AlertTriangle size={15} className="text-amber-600" />
+            <span className="text-sm font-medium text-amber-800">Obligaciones del propietario</span>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {condicionesClave.map((c, i) => (
+              <li key={i} className="px-4 py-3 flex items-start gap-3 text-sm text-gray-800">
+                <span className="mt-1 w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                  {i + 1}
+                </span>
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Nota / advertencia */}
       {nota && (
@@ -288,11 +354,11 @@ function ResultadoPGOU({ resultado }: { resultado: any }) {
         </div>
       )}
 
-      {/* Campos urbanisticos */}
+      {/* Parámetros urbanísticos */}
       {camposUrbanisticos.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 border-b text-sm font-medium text-gray-700">
-            Parametros urbanisticos
+            Parámetros urbanísticos
           </div>
           <div className="grid grid-cols-2 divide-x divide-y">
             {camposUrbanisticos.map((campo) => (
@@ -345,7 +411,7 @@ function ResultadoPGOU({ resultado }: { resultado: any }) {
           </div>
           <div className="p-4 space-y-3">
             {fragmentos.map((frag: string, i: number) => (
-              <blockquote key={i} className="border-l-3 border-sky-300 pl-4 py-1 text-sm text-gray-700 italic bg-sky-50/50 rounded-r-lg pr-3">
+              <blockquote key={i} className="border-l-4 border-sky-300 pl-4 py-1 text-sm text-gray-700 italic bg-sky-50/50 rounded-r-lg pr-3">
                 "{frag}"
               </blockquote>
             ))}
@@ -353,7 +419,7 @@ function ResultadoPGOU({ resultado }: { resultado: any }) {
         </div>
       )}
 
-      {/* Articulos referencia */}
+      {/* Artículos de referencia */}
       {articulos.length > 0 && (
         <div className="flex flex-wrap gap-2 px-1">
           {articulos.map((art: string, i: number) => (

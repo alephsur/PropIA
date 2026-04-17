@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Copy, Check } from 'lucide-react'
+import { Search, Copy, Check, Map } from 'lucide-react'
 import { catastroApi } from '../../api/client'
 import { useAppStore } from '../../stores/appStore'
 
@@ -66,7 +66,7 @@ function SeccionCatastro({ titulo, children }: { titulo: string; children: React
 }
 
 export function CatastroPanel() {
-  const { setLoading, setCurrentResult } = useAppStore()
+  const { setLoading, setCurrentResult, navegarAUrbanismo } = useAppStore()
   const [rc, setRc] = useState('')
   const [provincia, setProvincia] = useState('CANTABRIA')
   const [municipio, setMunicipio] = useState('')
@@ -155,6 +155,23 @@ export function CatastroPanel() {
 
       {resultado && (
         <div className="space-y-4">
+          {/* Acceso rápido a Planeamiento con esta RC */}
+          {resultado.referencia_catastral && resultado.municipio && (
+            <button
+              onClick={() =>
+                navegarAUrbanismo(
+                  resultado.municipio!.toUpperCase(),
+                  (resultado.provincia ?? provincia).toLowerCase(),
+                  resultado.referencia_catastral!
+                )
+              }
+              className="w-full flex items-center justify-center gap-2 border-2 border-sky-500 text-sky-600 hover:bg-sky-50 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            >
+              <Map size={16} />
+              Consultar PGOU con esta RC
+            </button>
+          )}
+
           <SeccionCatastro titulo="Datos descriptivos del inmueble">
             {resultado.referencia_catastral && (
               <Campo label="Referencia catastral" value={<RCCopyable rc={resultado.referencia_catastral} />} />

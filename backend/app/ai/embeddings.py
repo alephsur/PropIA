@@ -1,4 +1,10 @@
-"""Generación de embeddings con Ollama (local, sin coste)."""
+"""Generación de embeddings con Ollama (local, sin coste).
+
+Para textos que exceden la ventana del modelo, se aplica sliding window
+con mean-pooling: se divide el texto en ventanas solapadas, se embebe cada
+una, y se promedian los vectores. Esto preserva la semántica del texto
+completo en un único vector de la misma dimensión.
+"""
 import asyncio
 import httpx
 from app.config import get_settings
@@ -13,21 +19,58 @@ _RETRY_DELAY = 2.0
 # Endpoint moderno de Ollama (>=0.1.26): acepta input como string o lista de strings
 _EMBED_URL_TEMPLATE = "{base}/api/embed"
 
-# mxbai-embed-large: 512 tokens. Español legal ~1,5-2 tokens/char → límite conservador.
-_MAX_CHARS = 400
+# mxbai-embed-large: 512 tokens por arquitectura BERT (inamovible).
+# Texto jurídico español con números/siglas ~2.5 chars/token → 1000 chars ≈ 400 tok,
+# con margen bajo el límite real. Con 1500 chars algunos chunks rebotaban como
+# "input length exceeds context length" y Ollama tumba el batch entero.
+_MAX_CHARS = 1000
 
-# Nº de textos por llamada batch. Ollama procesa el lote en una sola inferencia.
+# Solapamiento entre ventanas para no cortar entidades en el borde
+_WINDOW_OVERLAP = 200
+
+# Nº de textos (ventanas) por llamada batch. Ollama procesa el lote en una sola inferencia.
 _BATCH_SIZE = 32
 
 
-def _truncar(texto: str) -> str:
-    if len(texto) > _MAX_CHARS:
-        logger.warning(
-            f"Chunk truncado de {len(texto)} a {_MAX_CHARS} chars antes de embedding. "
-            "Revisa CHUNK_SIZE en pgou_index.py si esto aparece con frecuencia."
-        )
-        return texto[:_MAX_CHARS]
-    return texto
+def _split_windows(texto: str) -> list[str]:
+    """Divide un texto en ventanas solapadas si excede _MAX_CHARS.
+
+    Textos cortos devuelven [texto]. Textos largos devuelven múltiples ventanas
+    cuyos embeddings se mean-pool'arán para obtener un vector representativo
+    del conjunto.
+    """
+    texto = (texto or "").strip()
+    if not texto:
+        return [""]
+    if len(texto) <= _MAX_CHARS:
+        return [texto]
+
+    step = _MAX_CHARS - _WINDOW_OVERLAP
+    ventanas: list[str] = []
+    start = 0
+    while start < len(texto):
+        ventanas.append(texto[start:start + _MAX_CHARS])
+        if start + _MAX_CHARS >= len(texto):
+            break
+        start += step
+    return ventanas
+
+
+def _mean_pool(vectores: list[list[float]]) -> list[float]:
+    """Promedia vectores coordenada a coordenada.
+
+    mxbai-embed-large devuelve vectores normalizados; el promedio preserva
+    bien la dirección semántica dominante del conjunto.
+    """
+    if len(vectores) == 1:
+        return vectores[0]
+    dim = len(vectores[0])
+    acum = [0.0] * dim
+    for v in vectores:
+        for i in range(dim):
+            acum[i] += v[i]
+    n = float(len(vectores))
+    return [x / n for x in acum]
 
 
 async def _embed_request(textos: list[str]) -> list[list[float]]:
@@ -75,26 +118,46 @@ async def _embed_request(textos: list[str]) -> list[list[float]]:
 
 
 async def embed_texto(texto: str) -> list[float]:
-    """Genera embedding para un texto (consultas RAG)."""
-    resultados = await _embed_request([_truncar(texto)])
-    return resultados[0]
+    """Genera embedding para un texto, con ventaneo automático si excede _MAX_CHARS."""
+    ventanas = _split_windows(texto)
+    resultados = await _embed_request(ventanas)
+    return _mean_pool(resultados)
 
 
 async def embed_batch(textos: list[str]) -> list[list[float]]:
-    """Genera embeddings en batch usando la capacidad nativa de Ollama.
+    """Genera embeddings en batch con sliding window transparente.
 
-    Divide en sub-lotes de _BATCH_SIZE para no saturar la memoria del modelo.
-    1431 chunks → ~45 llamadas en lugar de 1431.
+    Para cada texto calcula sus ventanas, agrupa todas en lotes de _BATCH_SIZE,
+    y hace mean-pool por texto original. Un chunk de 4000 chars se convierte en
+    3 ventanas que se promedian → sigue siendo un único embedding por chunk.
     """
-    textos_truncados = [_truncar(t) for t in textos]
-    total = len(textos_truncados)
-    embeddings: list[list[float]] = []
+    if not textos:
+        return []
 
-    for inicio in range(0, total, _BATCH_SIZE):
-        lote = textos_truncados[inicio: inicio + _BATCH_SIZE]
-        fin = min(inicio + _BATCH_SIZE, total)
-        logger.debug(f"embed_batch: lote {inicio+1}-{fin}/{total} ({len(lote)} textos)")
+    # 1. Ventanear cada texto y guardar rangos
+    todas_ventanas: list[str] = []
+    rangos: list[tuple[int, int]] = []
+    for t in textos:
+        ventanas = _split_windows(t)
+        inicio = len(todas_ventanas)
+        todas_ventanas.extend(ventanas)
+        rangos.append((inicio, inicio + len(ventanas)))
+
+    total = len(todas_ventanas)
+    logger.debug(
+        f"embed_batch: {len(textos)} textos → {total} ventanas "
+        f"(~{total / len(textos):.1f} ventanas/texto)"
+    )
+
+    # 2. Embedding en sub-lotes
+    embeddings_planos: list[list[float]] = []
+    for i in range(0, total, _BATCH_SIZE):
+        lote = todas_ventanas[i: i + _BATCH_SIZE]
         resultado = await _embed_request(lote)
-        embeddings.extend(resultado)
+        embeddings_planos.extend(resultado)
 
-    return embeddings
+    # 3. Mean-pool por texto original
+    pooled: list[list[float]] = []
+    for (start, end) in rangos:
+        pooled.append(_mean_pool(embeddings_planos[start:end]))
+    return pooled

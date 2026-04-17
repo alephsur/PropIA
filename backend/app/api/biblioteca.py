@@ -250,6 +250,47 @@ async def servir_documento(documento_id: str, db: AsyncSession = Depends(get_db)
     )
 
 
+@router.post("/documento/{documento_id}/reindexar")
+async def reindexar_documento(documento_id: str, db: AsyncSession = Depends(get_db)):
+    """Re-indexa un documento existente: borra sus chunks/fichas y vuelve a procesarlo.
+
+    Útil para aplicar mejoras del parser sin tener que borrar y volver a descargar.
+    No cambia la fila de DocumentoBiblioteca ni el archivo en disco.
+    """
+    result = await db.execute(
+        select(DocumentoBiblioteca).where(DocumentoBiblioteca.id == uuid.UUID(documento_id))
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    try:
+        contenido = await leer_pdf(doc.ruta_local)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Fichero PDF no encontrado en el servidor")
+
+    # Limpiar estado previo del índice (chunks; fichas se borran dentro de _indexar_fichas_aa)
+    from sqlalchemy import text
+    await db.execute(
+        text("DELETE FROM pgou_chunks WHERE documento_id = :id"),
+        {"id": documento_id},
+    )
+    await db.commit()
+
+    try:
+        n_chunks = await indexar_pdf(
+            db, doc.id, contenido, doc.municipio, doc.provincia, doc.seccion
+        )
+    except Exception as e:
+        logger.error(f"Re-indexación falló para {documento_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Re-indexación falló: {e}")
+
+    doc.indexado = n_chunks > 0
+    await db.commit()
+
+    return {"ok": True, "documento_id": documento_id, "chunks": n_chunks}
+
+
 @router.delete("/documento/{documento_id}")
 async def eliminar_documento(documento_id: str, db: AsyncSession = Depends(get_db)):
     """Elimina un documento de la biblioteca."""

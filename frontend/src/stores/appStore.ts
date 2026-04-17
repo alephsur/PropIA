@@ -40,11 +40,12 @@ interface AppStore {
   ccaaActiva: string
   setCcaaActiva: (ccaa: string) => void
 
-  // Urbanismo — pre-rellenado al navegar desde Biblioteca
+  // Urbanismo — pre-rellenado al navegar desde Catastro o Biblioteca
   municipioUrbanismo: string
   provinciaUrbanismo: string
+  rcUrbanismo: string
   setUrbanismoTarget: (municipio: string, provincia: string) => void
-  navegarAUrbanismo: (municipio: string, provincia: string) => void
+  navegarAUrbanismo: (municipio: string, provincia: string, rc?: string) => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -81,8 +82,9 @@ export const useAppStore = create<AppStore>((set) => ({
 
   municipioUrbanismo: '',
   provinciaUrbanismo: 'cantabria',
+  rcUrbanismo: '',
   setUrbanismoTarget: (municipio, provincia) =>
     set({ municipioUrbanismo: municipio, provinciaUrbanismo: provincia }),
-  navegarAUrbanismo: (municipio, provincia) =>
-    set({ activeModule: 'urbanismo', municipioUrbanismo: municipio, provinciaUrbanismo: provincia }),
+  navegarAUrbanismo: (municipio, provincia, rc = '') =>
+    set({ activeModule: 'urbanismo', municipioUrbanismo: municipio, provinciaUrbanismo: provincia, rcUrbanismo: rc }),
 }))

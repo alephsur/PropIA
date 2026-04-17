@@ -18,7 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Enable extensions
-    op.execute("CREATE EXTENSION IF NOT EXISTS uuid-ossp")
+    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     # documentos_biblioteca

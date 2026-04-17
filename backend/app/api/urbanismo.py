@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.db.models import PgouMunicipio
-from app.ai.pgou_index import buscar_pgou
-from app.services.ai_synthesis import consultar_pgou
+from app.ai.pgou_index import buscar_pgou, buscar_por_rc
+from app.config import get_settings
+from app.services.ai_synthesis import consultar_urbanismo
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -71,11 +72,40 @@ class ConsultaUrbanismo(BaseModel):
 
 @router.post("/informe")
 async def informe_urbanismo(body: ConsultaUrbanismo, db: AsyncSession = Depends(get_db)):
-    """Consulta el PGOU por RAG y genera informe urbanístico."""
+    """Consulta el PGOU por RAG y genera informe urbanístico.
+
+    Si se proporciona RC, busca primero la ficha estructurada del plan (manzana/parcela)
+    y la combina con el RAG para una respuesta más precisa.
+    La respuesta incluye 'fuentes' con documento_id y página para deep-link en Biblioteca.
+    """
     try:
-        chunks = await buscar_pgou(db, body.municipio, body.provincia, body.consulta)
-        resultado = await consultar_pgou(chunks, body.consulta, body.municipio)
-        return resultado
+        # Ejecutar secuencialmente: AsyncSession no admite operaciones concurrentes
+        ficha_aa = None
+        if body.rc:
+            try:
+                ficha_aa = await buscar_por_rc(db, body.municipio, body.provincia, body.rc)
+            except Exception as e:
+                logger.warning(f"buscar_por_rc error: {e}")
+
+        settings = get_settings()
+        if settings.pgou_fast_mode:
+            logger.info(f"PGOU fast_mode: top_k={settings.pgou_fast_top_k}, sin expand/rerank")
+            chunks = await buscar_pgou(
+                db, body.municipio, body.provincia, body.consulta,
+                top_k=settings.pgou_fast_top_k,
+                rerank=False,
+                expand_query=False,
+            )
+        else:
+            chunks = await buscar_pgou(db, body.municipio, body.provincia, body.consulta)
+
+        return await consultar_urbanismo(
+            ficha_aa=ficha_aa,
+            chunks=chunks,
+            pregunta=body.consulta,
+            municipio=body.municipio,
+        )
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

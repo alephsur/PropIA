@@ -3,6 +3,8 @@ Abstracción de clientes LLM.
 Soporta Anthropic, OpenRouter y Groq con una interfaz unificada.
 Incluye fallback automático entre proveedores al alcanzar límites de uso.
 """
+import time
+
 import anthropic
 import httpx
 import openai
@@ -22,7 +24,7 @@ DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-20250514",
     "openrouter": "anthropic/claude-sonnet-4-5",
     "groq": "llama-3.3-70b-versatile",
-    "ollama": "llama3.2",  # modelo local — sin coste, sin límite de tokens
+    "ollama": "qwen2.5:7b",  # modelo local — sin coste, sin límite de tokens
 }
 
 # Proveedores compatibles con OpenAI SDK (Ollama usa su API nativa para respetar num_ctx)
@@ -99,12 +101,19 @@ def complete(system: str, user_content, max_tokens: int = 2000, provider_overrid
     provider = provider_override or settings.ai_provider
     model = _get_model(provider, settings.ai_model if not provider_override else "", settings)
 
-    logger.debug(f"LLM call → proveedor={provider}, modelo={model}")
+    input_chars = len(user_content) if isinstance(user_content, str) else sum(
+        len(b.get("text", "")) for b in user_content if isinstance(b, dict)
+    )
+    logger.info(f"LLM call → proveedor={provider}, modelo={model}, input={input_chars} chars, max_tokens={max_tokens}")
 
+    t0 = time.monotonic()
     try:
-        return _call_provider(provider, model, system, user_content, max_tokens, settings)
+        result = _call_provider(provider, model, system, user_content, max_tokens, settings)
+        logger.info(f"LLM ok ← {provider}/{model} en {time.monotonic() - t0:.2f}s ({len(result)} chars salida)")
+        return result
     except Exception as exc:
         if not _is_rate_limit_error(exc):
+            logger.error(f"LLM error ← {provider}/{model} tras {time.monotonic() - t0:.2f}s: {type(exc).__name__}")
             raise
 
         fallback_provider = settings.ai_provider_fallback
@@ -118,11 +127,14 @@ def complete(system: str, user_content, max_tokens: int = 2000, provider_overrid
 
         fallback_model = _get_model(fallback_provider, settings.ai_model_fallback, settings)
         logger.warning(
-            f"Rate limit en {provider} ({type(exc).__name__}). "
+            f"Rate limit en {provider} ({type(exc).__name__}) tras {time.monotonic() - t0:.2f}s. "
             f"Reintentando con fallback: {fallback_provider} / {fallback_model}"
         )
 
-        return _call_provider(fallback_provider, fallback_model, system, user_content, max_tokens, settings)
+        t1 = time.monotonic()
+        result = _call_provider(fallback_provider, fallback_model, system, user_content, max_tokens, settings)
+        logger.info(f"LLM ok (fallback) ← {fallback_provider}/{fallback_model} en {time.monotonic() - t1:.2f}s")
+        return result
 
 
 def _call_provider(provider: str, model: str, system: str, user_content, max_tokens: int, settings) -> str:

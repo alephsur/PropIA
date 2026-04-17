@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     embedding_model: str = "mxbai-embed-large"
     embedding_dimensions: int = 1024
     # Modelo Ollama para inferencia LLM (distinto del modelo de embeddings)
-    ollama_llm_model: str = "llama3.2"
+    ollama_llm_model: str = "qwen2.5:7b"
 
     # IA — OpenRouter
     openrouter_api_key: str = ""
@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     rate_urbanismo: int = 30
     rate_documentos: int = 10
     rate_biblioteca: int = 20
+
+    # RAG — modo rápido para LLMs locales (Ollama)
+    # True = desactiva query expansion + LLM rerank, y usa top_k=6 en vez de 10
+    # Recomendado cuando AI_PROVIDER=ollama para evitar 3 llamadas secuenciales pesadas.
+    pgou_fast_mode: bool = False
+    pgou_fast_top_k: int = 6
 
     class Config:
         env_file = ".env"

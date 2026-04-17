@@ -35,8 +35,10 @@ export const bibliotecaApi = {
 }
 
 export const urbanismoApi = {
-  informe: (body: { provincia: string; municipio: string; consulta?: string }) =>
-    api.post('/urbanismo/informe', body),
+  informe: (body: { provincia: string; municipio: string; consulta?: string; rc?: string }) =>
+    api.post('/urbanismo/informe', body, {
+      timeout: 300000, // 5 min — LLM local (Ollama) puede tardar en informes con RAG extenso
+    }),
   municipiosIndexados: (ccaa?: string) =>
     api.get('/urbanismo/municipios', { params: { ccaa } }),
   consultasTipo: () =>

@@ -167,7 +167,12 @@ export function BibliotecaPanel() {
             <ProgressTracker
               tareaId={tareaId}
               total={totalDescarga}
-              onDone={() => { setTareaId(null); setTab('biblioteca') }}
+              onDone={() => {
+                setTareaId(null)
+                setMunicipioBiblio(municipio)
+                setProvinciaBiblio(provincia)
+                setTab('biblioteca')
+              }}
             />
           )}
 
